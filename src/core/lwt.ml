@@ -362,7 +362,14 @@
 module Lwt_sequence = Lwt_sequence
 [@@@ocaml.warning "+3"]
 
+let tracing = Shell_probe.Tracing.create ~buffer_length:1024
 
+let record_trace (f: 'a -> 'b) =
+  let loc = Owee_location.extract f in
+  (* Locs are currently just function pointers.
+     Casting these pointers to int allows to store them efficiently. *)
+  Shell_probe.Tracing.record tracing (Obj.magic loc)
+[@@inline]
 
 (* Some sequence-associated storage types
 
@@ -1152,6 +1159,7 @@ struct
       exit 2)
 
   let handle_with_async_exception_hook f v =
+    record_trace f ;
     (* Note that this function does not care if [f] evaluates to a promise. In
        particular, if [f v] evaluates to [p] and [p] is already rejected or will
        be reject later, it is not the responsibility of this function to pass
@@ -1822,6 +1830,7 @@ struct
      some way, especially if assuming Flambda. *)
 
   let bind p f =
+    record_trace f ;
     let Internal p = to_internal_promise p in
     let p = underlying p in
 
@@ -1977,7 +1986,7 @@ struct
         match p_result with
         | Fulfilled v ->
           current_storage := saved_storage;
-
+          record_trace f ;
           let p''_result = try Fulfilled (f v) with exn -> Rejected exn in
 
           let State_may_now_be_pending_proxy p'' = may_now_be_proxy p'' in
@@ -2004,6 +2013,7 @@ struct
       run_callback_or_defer_it
         ~run_immediately_and_ensure_tail_call:true
         ~callback:(fun () ->
+          record_trace f ;
           to_public_promise
             {state = try Fulfilled (f v) with exn -> Rejected exn})
         ~if_deferred:(fun () ->
@@ -2020,6 +2030,7 @@ struct
       p''
 
   let catch f h =
+    record_trace f ;
     let p = try f () with exn -> fail exn in
     let Internal p = to_internal_promise p in
     let p = underlying p in
@@ -2041,7 +2052,7 @@ struct
 
         | Rejected exn ->
           current_storage := saved_storage;
-
+          record_trace h ;
           let p' = try h exn with exn -> fail exn in
           let Internal p' = to_internal_promise p' in
 
@@ -2063,7 +2074,7 @@ struct
     | Rejected exn ->
       run_callback_or_defer_it
         ~run_immediately_and_ensure_tail_call:true
-        ~callback:(fun () -> h exn)
+        ~callback:(fun () -> record_trace f ; h exn)
         ~if_deferred:(fun () ->
           let (p'', callback) =
             create_result_promise_and_callback_if_deferred () in
@@ -2075,6 +2086,7 @@ struct
       p''
 
   let backtrace_catch add_loc f h =
+    record_trace f ;
     let p = try f () with exn -> fail exn in
     let Internal p = to_internal_promise p in
     let p = underlying p in
@@ -2097,6 +2109,7 @@ struct
         | Rejected exn ->
           current_storage := saved_storage;
 
+          record_trace h ;
           let p' = try h exn with exn -> fail (add_loc exn) in
           let Internal p' = to_internal_promise p' in
 
@@ -2118,7 +2131,7 @@ struct
     | Rejected exn ->
       run_callback_or_defer_it
         ~run_immediately_and_ensure_tail_call:true
-        ~callback:(fun () -> h (add_loc exn))
+        ~callback:(fun () -> record_trace h ; h (add_loc exn))
         ~if_deferred:(fun () ->
           let (p'', callback) =
             create_result_promise_and_callback_if_deferred () in
@@ -2130,6 +2143,7 @@ struct
       p''
 
   let try_bind f f' h =
+    record_trace f ;
     let p = try f () with exn -> fail exn in
     let Internal p = to_internal_promise p in
     let p = underlying p in
@@ -2144,6 +2158,7 @@ struct
         | Fulfilled v ->
           current_storage := saved_storage;
 
+          record_trace f' ;
           let p' = try f' v with exn -> fail exn in
           let Internal p' = to_internal_promise p' in
 
@@ -2157,6 +2172,7 @@ struct
         | Rejected exn ->
           current_storage := saved_storage;
 
+          record_trace h ;
           let p' = try h exn with exn -> fail exn in
           let Internal p' = to_internal_promise p' in
 
@@ -2175,7 +2191,7 @@ struct
     | Fulfilled v ->
       run_callback_or_defer_it
         ~run_immediately_and_ensure_tail_call:true
-        ~callback:(fun () -> f' v)
+        ~callback:(fun () -> record_trace f' ; f' v)
         ~if_deferred:(fun () ->
           let (p'', callback) =
             create_result_promise_and_callback_if_deferred () in
@@ -2184,7 +2200,7 @@ struct
     | Rejected exn ->
       run_callback_or_defer_it
         ~run_immediately_and_ensure_tail_call:true
-        ~callback:(fun () -> h exn)
+        ~callback:(fun () -> record_trace h ; h exn)
         ~if_deferred:(fun () ->
           let (p'', callback) =
             create_result_promise_and_callback_if_deferred () in
@@ -2196,6 +2212,7 @@ struct
       p''
 
   let backtrace_try_bind add_loc f f' h =
+    record_trace f ;
     let p = try f () with exn -> fail exn in
     let Internal p = to_internal_promise p in
     let p = underlying p in
@@ -2210,6 +2227,7 @@ struct
         | Fulfilled v ->
           current_storage := saved_storage;
 
+          record_trace f' ;
           let p' = try f' v with exn -> fail (add_loc exn) in
           let Internal p' = to_internal_promise p' in
 
@@ -2223,6 +2241,7 @@ struct
         | Rejected exn ->
           current_storage := saved_storage;
 
+          record_trace h ;
           let p' = try h exn with exn -> fail (add_loc exn) in
           let Internal p' = to_internal_promise p' in
 
@@ -2241,7 +2260,7 @@ struct
     | Fulfilled v ->
       run_callback_or_defer_it
         ~run_immediately_and_ensure_tail_call:true
-        ~callback:(fun () -> f' v)
+        ~callback:(fun () -> record_trace f' ; f' v)
         ~if_deferred:(fun () ->
           let (p'', callback) =
             create_result_promise_and_callback_if_deferred () in
@@ -2250,7 +2269,7 @@ struct
     | Rejected exn ->
       run_callback_or_defer_it
         ~run_immediately_and_ensure_tail_call:true
-        ~callback:(fun () -> h (add_loc exn))
+        ~callback:(fun () -> record_trace h ; h (add_loc exn))
         ~if_deferred:(fun () ->
           let (p'', callback) =
             create_result_promise_and_callback_if_deferred () in
@@ -2263,13 +2282,13 @@ struct
 
   let finalize f f' =
     try_bind f
-      (fun x -> bind (f' ()) (fun () -> return x))
-      (fun e -> bind (f' ()) (fun () -> fail e))
+      (fun x -> record_trace f' ; bind (f' ()) (fun () -> return x))
+      (fun e -> record_trace f' ; bind (f' ()) (fun () -> fail e))
 
   let backtrace_finalize add_loc f f' =
     backtrace_try_bind add_loc f
-      (fun x -> bind (f' ()) (fun () -> return x))
-      (fun e -> bind (f' ()) (fun () -> fail (add_loc e)))
+      (fun x -> record_trace f' ; bind (f' ()) (fun () -> return x))
+      (fun e -> record_trace f' ; bind (f' ()) (fun () -> fail (add_loc e)))
 
 
 
@@ -2474,6 +2493,7 @@ struct
   external reraise : exn -> 'a = "%reraise"
 
   let dont_wait f h =
+    record_trace f ;
     let p = try f () with exn -> fail exn in
     let Internal p = to_internal_promise p in
 
@@ -2481,6 +2501,7 @@ struct
     | Fulfilled _ ->
       ()
     | Rejected exn ->
+      record_trace h ;
       h exn
 
     | Pending p_callbacks ->
@@ -2489,11 +2510,13 @@ struct
         | Fulfilled _ ->
           ()
         | Rejected exn ->
+          record_trace h ;
           h exn
       in
       add_implicitly_removed_callback p_callbacks callback
 
   let async f =
+    record_trace f ;
     let p = try f () with exn -> fail exn in
     let Internal p = to_internal_promise p in
 
@@ -3075,35 +3098,42 @@ struct
 
 
 
-  let apply f x = try f x with exn -> fail exn
+  let apply f x = record_trace f ; try f x with exn -> fail exn
 
-  let wrap f = try return (f ()) with exn -> fail exn
+  let wrap f = record_trace f ; try return (f ()) with exn -> fail exn
 
   let wrap1 f x1 =
+    record_trace f ;
     try return (f x1)
     with exn -> fail exn
 
   let wrap2 f x1 x2 =
+    record_trace f ;
     try return (f x1 x2)
     with exn -> fail exn
 
   let wrap3 f x1 x2 x3 =
+    record_trace f ;
     try return (f x1 x2 x3)
     with exn -> fail exn
 
   let wrap4 f x1 x2 x3 x4 =
+    record_trace f ;
     try return (f x1 x2 x3 x4)
     with exn -> fail exn
 
   let wrap5 f x1 x2 x3 x4 x5 =
+    record_trace f ;
     try return (f x1 x2 x3 x4 x5)
     with exn -> fail exn
 
   let wrap6 f x1 x2 x3 x4 x5 x6 =
+    record_trace f ;
     try return (f x1 x2 x3 x4 x5 x6)
     with exn -> fail exn
 
   let wrap7 f x1 x2 x3 x4 x5 x6 x7 =
+    record_trace f ;
     try return (f x1 x2 x3 x4 x5 x6 x7)
     with exn -> fail exn
 
