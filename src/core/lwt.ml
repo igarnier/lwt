@@ -362,7 +362,8 @@
 module Lwt_sequence = Lwt_sequence
 [@@@ocaml.warning "+3"]
 
-let tracing = Shell_probe.Tracing.create ~buffer_length:1024
+(* don't be stingy on buffers *)
+let tracing = Shell_probe.Tracing.create ~buffer_length:(32768 * 8)
 
 let record_trace (f: 'a -> 'b) =
   let loc = Owee_location.extract f in
