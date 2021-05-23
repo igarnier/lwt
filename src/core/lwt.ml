@@ -1831,7 +1831,6 @@ struct
      some way, especially if assuming Flambda. *)
 
   let bind p f =
-    record_trace f ;
     let Internal p = to_internal_promise p in
     let p = underlying p in
 
@@ -1870,7 +1869,7 @@ struct
         match p_result with
         | Fulfilled v ->
           current_storage := saved_storage;
-
+          record_trace f ;
           let p' = try f v with exn -> fail exn in
           let Internal p' = to_internal_promise p' in
           (* Run the user's function [f]. *)
@@ -1906,7 +1905,7 @@ struct
     | Fulfilled v ->
       run_callback_or_defer_it
         ~run_immediately_and_ensure_tail_call:true
-        ~callback:(fun () -> f v)
+        ~callback:(fun () -> record_trace f ; f v)
         ~if_deferred:(fun () ->
           let (p'', callback) =
             create_result_promise_and_callback_if_deferred () in
@@ -2075,7 +2074,7 @@ struct
     | Rejected exn ->
       run_callback_or_defer_it
         ~run_immediately_and_ensure_tail_call:true
-        ~callback:(fun () -> record_trace f ; h exn)
+        ~callback:(fun () -> record_trace h ; h exn)
         ~if_deferred:(fun () ->
           let (p'', callback) =
             create_result_promise_and_callback_if_deferred () in
