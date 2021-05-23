@@ -2086,3 +2086,5 @@ val abandon_wakeups : unit -> unit
 val debug_state_is : 'a state -> 'a t -> bool t
 
 val tracing : Shell_probe.Tracing.state
+
+val record_trace : ('a -> 'b) -> unit
