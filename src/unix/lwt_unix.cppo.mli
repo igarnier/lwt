@@ -79,6 +79,16 @@ val with_timeout : float -> (unit -> 'a Lwt.t) -> 'a Lwt.t
       ]}
   *)
 
+module Mock :
+sig
+  val activate_mocking : initial_time:float -> unit
+  val deactivate_mocking : unit -> unit
+  val sleep : float -> unit Lwt.t
+  val systime_os_now : unit -> Ptime.t
+  val unix_gettimeofday : unit -> float
+  val set_now : float -> unit
+end
+
 (** {2 Operation on file-descriptors} *)
 
 type file_descr

@@ -118,18 +118,68 @@ let call_notification id =
    | Sleepers                                                        |
    +-----------------------------------------------------------------+ *)
 
-let sleep delay =
+let default_sleep delay =
   let waiter, wakener = Lwt.task () in
   let ev = Lwt_engine.on_timer delay false (fun ev -> Lwt_engine.stop_event ev; Lwt.wakeup wakener ()) in
   Lwt.on_cancel waiter (fun () -> Lwt_engine.stop_event ev);
   waiter
 
+module Mock =
+  struct
+    let default_sleep_callback = default_sleep
+
+    let default_systime_os_now_callback () =
+      match Ptime.of_float_s (Unix.gettimeofday ()) with
+      | None -> assert false
+      | Some ptime -> ptime
+
+    let sleep_callback = ref default_sleep_callback
+
+    let systime_os_now_callback = ref default_systime_os_now_callback
+
+    let set_now_callback = ref None
+
+    let activate_mocking ~initial_time =
+      let module M = Sleep_queue.Create (struct
+                         let initial_time = initial_time
+                       end) in
+      sleep_callback := M.sleep ;
+      (systime_os_now_callback :=
+         fun () ->
+         match Ptime.of_float_s (M.now ()) with
+         | None ->
+            assert false
+         | Some ptime ->
+            ptime) ;
+      set_now_callback := Some M.set_now
+
+    let deactivate_mocking () =
+      sleep_callback := default_sleep_callback ;
+      systime_os_now_callback := default_systime_os_now_callback ;
+      set_now_callback := None
+
+    let sleep t = !sleep_callback t
+
+    let systime_os_now t = !systime_os_now_callback t
+
+    let unix_gettimeofday t = Ptime.to_float_s (!systime_os_now_callback t)
+
+    let set_now seconds_since_epoch =
+      match !set_now_callback with
+      | None ->
+         Stdlib.failwith "Lwt_unix.Mock.elapse: callback not set"
+      | Some callback ->
+         callback seconds_since_epoch
+  end
+
+let sleep = Mock.sleep
+
 let yield = Lwt_main.yield
 
 let auto_yield timeout =
-  let limit = ref (Unix.gettimeofday () +. timeout) in
+  let limit = ref (Mock.unix_gettimeofday () +. timeout) in
   fun () ->
-    let current = Unix.gettimeofday () in
+    let current = Mock.unix_gettimeofday () in
     if current >= !limit then begin
       limit := current +. timeout;
       yield ();
